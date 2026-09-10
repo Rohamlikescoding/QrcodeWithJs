@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>QR Code Error-Correction Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: #0f1724;
+        --accent: #7c3aed;
+        --muted: #94a3b8;
+        --glass: rgba(255, 255, 255, 0.03);
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: Inter, system-ui, Arial;
+        background: radial-gradient(
+            1200px 600px at 10% 20%,
+            rgba(124, 58, 237, 0.06),
+            transparent 10%
+          ),
+          linear-gradient(180deg, #041020, #071227);
+        color: #e6eef6;
+      }
+      .container {
+        max-width: 1100px;
+        margin: 28px auto;
+        padding: 18px;
+        display: grid;
+        grid-template-columns: 380px 1fr;
+        gap: 18px;
+      }
+      .card {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.02),
+          rgba(255, 255, 255, 0.01)
+        );
+        padding: 14px;
+        border-radius: 12px;
+        box-shadow: 0 8px 30px rgba(2, 6, 23, 0.6);
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      label {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 10px;
+      }
+      input[type="text"],
+      select,
+      input[type="number"] {
+        width: 100%;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        background: transparent;
+        color: inherit;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 10px;
+      }
+      button {
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 0;
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+      }
+      button.ghost {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+      }
+      canvas {
+        background: #fff;
+        border-radius: 8px;
+        display: block;
+        max-width: 100%;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .status {
+        padding: 8px;
+        border-radius: 8px;
+        margin-top: 10px;
+      }
+      .ok {
+        background: rgba(16, 185, 129, 0.06);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.12);
+      }
+      .fail {
+        background: rgba(239, 68, 68, 0.04);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.08);
+      }
+      pre {
+        background: rgba(0, 0, 0, 0.35);
+        padding: 8px;
+        border-radius: 8px;
+        white-space: pre-wrap;
+      }
+      .legend {
+        display: flex;
+        gap: 10px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+      .legend .item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .sw {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+      }
+      .sw.dark {
+        background: #111;
+      }
+      .sw.light {
+        background: #fff;
+      }
+      .sw.erase {
+        background: #000;
+      }
+      .sw.func {
+        background: #ffca8f;
+      }
+      .explain {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 12px;
+        line-height: 1.4;
+      }
+      footer {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+      }
+      @media (max-width: 900px) {
+        .container {
+          grid-template-columns: 1fr;
+          padding: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h1>QR Error-Correction Visualizer</h1>
+        <div class="muted" style="margin-top: 6px">
+          Erase modules (5–40%) and watch error correction in action.
+        </div>
+
+        <label>Text to encode</label>
+        <input id="txt" type="text" value="Hello — QR error-correction demo!" />
+
+        <div class="row">
+          <div style="flex: 1">
+            <label>Version (0 = auto)</label>
+            <input id="version" type="number" min="0" max="40" value="0" />
+          </div>
+          <div style="width: 140px">
+            <label>Error correction</label>
+            <select id="ecc">
+              <option value="L">L — Low (7%)</option>
+              <option value="M" selected>M — Medium (15%)</option>
+              <option value="Q">Q — Quartile (25%)</option>
+              <option value="H">H — High (30%)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="renderBtn">Render QR</button>
+          <button id="randomErase" class="ghost">Random erase</button>
+          <button id="clearErase" class="ghost">Clear erasures</button>
+        </div>
+
+        <label style="margin-top: 12px">Random erase percentage</label>
+        <input id="eraseRange" type="range" min="5" max="40" value="12" />
+        <div class="muted" style="margin-top: 6px">
+          Erase percent: <span id="erasePct">12</span>%
+        </div>
+
+        <div class="explain">
+          <strong>How it works</strong>
+          <div id="explainText">
+            We render the QR at higher resolution and downscale slightly to
+            create realistic edges so the decoder can detect finder patterns.
+            Reed–Solomon blocks let the QR recover from damage — higher ECC
+            sacrifices capacity for recoverability.
+          </div>
+        </div>
+
+        <div class="muted" style="margin-top: 8px">
+          Manual erase: click & drag on the QR to erase modules; hold
+          <kbd>Shift</kbd> while dragging to restore.
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display: flex; gap: 12px; flex-wrap: wrap">
+          <div style="flex: 1; min-width: 260px">
+            <canvas id="display" width="420" height="420"></canvas>
+          </div>
+          <div style="width: 320px; min-width: 220px">
+            <div id="status" class="status fail">Ready</div>
+
+            <div style="margin-top: 10px">
+              <div class="muted">Decode result:</div>
+              <pre id="decodeResult">—</pre>
+            </div>
+
+            <div style="margin-top: 10px">
+              <div class="muted">Module stats</div>
+              <div class="muted">
+                Total: <span id="totalModules">-</span> · Erased:
+                <span id="erasedModules">-</span> (<span id="erasedPct">-</span
+                >)
+              </div>
+            </div>
+
+            <div class="legend">
+              <div class="item">
+                <span class="sw dark"></span>
+                <span class="muted">Dark module</span>
+              </div>
+              <div class="item">
+                <span class="sw light"></span>
+                <span class="muted">Light module</span>
+              </div>
+              <div class="item">
+                <span class="sw func"></span>
+                <span class="muted">Function / finder</span>
+              </div>
+              <div class="item">
+                <span class="sw erase"></span>
+                <span class="muted">Erased / damaged</span>
+              </div>
+            </div>
+
+            <div class="explain" style="margin-top: 12px">
+              <strong>Reed–Solomon (brief)</strong>
+              <div class="muted">
+                QR divides data into blocks with parity bytes. When modules are
+                damaged the parity bytes let the decoder reconstruct missing
+                bytes up to the ECC capacity.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const txt = document.getElementById("txt");
+      const versionInput = document.getElementById("version");
+      const eccSelect = document.getElementById("ecc");
+      const renderBtn = document.getElementById("renderBtn");
+      const randomEraseBtn = document.getElementById("randomErase");
+      const clearEraseBtn = document.getElementById("clearErase");
+      const eraseRange = document.getElementById("eraseRange");
+      const erasePctLabel = document.getElementById("erasePct");
+
+      const display = document.getElementById("display");
+      const dctx = display.getContext("2d");
+      const statusEl = document.getElementById("status");
+      const decodeResult = document.getElementById("decodeResult");
+      const totalModulesEl = document.getElementById("totalModules");
+      const erasedModulesEl = document.getElementById("erasedModules");
+      const erasedPctEl = document.getElementById("erasedPct");
+
+      let qrObj = null;
+      let moduleCount = 0;
+      let modulePx = 8;
+      let scaleDown = 3;
+      let offscreen = null;
+      let offctx = null;
+      let eraseMask = [];
+      let protectFunction = true;
+
+      function makeQR() {
+        const text = txt.value || " ";
+        const version = parseInt(versionInput.value) || 0;
+        const ecc = eccSelect.value || "M";
+        try {
+          qrObj = qrcode(version, ecc);
+          qrObj.addData(text);
+          qrObj.make();
+        } catch (e) {
+          alert("QR creation failed: " + e.message);
+          return;
+        }
+
+        moduleCount = qrObj.getModuleCount();
+        const offModulePixel = modulePx * scaleDown;
+        const offW = moduleCount * offModulePixel;
+        const offH = offW;
+
+        offscreen = document.createElement("canvas");
+        offscreen.width = offW;
+        offscreen.height = offH;
+        offctx = offscreen.getContext("2d");
+        offctx.fillStyle = "#fff";
+        offctx.fillRect(0, 0, offW, offH);
+
+        eraseMask = Array.from({ length: moduleCount }, () =>
+          Array(moduleCount).fill(false)
+        );
+
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            const x = c * offModulePixel;
+            const y = r * offModulePixel;
+            const dark = qrObj.isDark(r, c);
+
+            offctx.fillStyle = dark ? "#000" : "#fff";
+            offctx.fillRect(x, y, offModulePixel, offModulePixel);
+          }
+        }
+
+        const visibleSize = Math.min(
+          420,
+          Math.max(200, moduleCount * modulePx)
+        );
+        display.width = visibleSize;
+        display.height = visibleSize;
+        renderToDisplay();
+        updateStats();
+        tryDecode();
+      }
+
+      function isFinderArea(r, c) {
+        const m = moduleCount;
+        const inTopLeft = r <= 8 && c <= 8;
+        const inTopRight = r <= 8 && c >= m - 9;
+        const inBottomLeft = r >= m - 9 && c <= 8;
+        return inTopLeft || inTopRight || inBottomLeft;
+      }
+      function isTiming(r, c) {
+        return r === 6 || c === 6;
+      }
+      function isFunctionModule(r, c) {
+        if (isFinderArea(r, c)) return true;
+        if (isTiming(r, c)) return true;
+        return false;
+      }
+
+      function renderToDisplay() {
+        if (!offscreen) return;
+        const tmp = document.createElement("canvas");
+        tmp.width = offscreen.width;
+        tmp.height = offscreen.height;
+        const tctx = tmp.getContext("2d");
+        tctx.drawImage(offscreen, 0, 0);
+        const offModulePixel = modulePx * scaleDown;
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            if (eraseMask[r][c]) {
+              if (protectFunction && isFunctionModule(r, c)) continue;
+              const x = c * offModulePixel;
+              const y = r * offModulePixel;
+              tctx.fillStyle = "#000";
+              tctx.fillRect(x, y, offModulePixel, offModulePixel);
+              tctx.fillStyle = "rgba(255,255,255,0.03)";
+              for (let i = 0; i < 2; i++) {
+                const rx = x + Math.random() * offModulePixel;
+                const ry = y + Math.random() * offModulePixel;
+                tctx.fillRect(
+                  rx,
+                  ry,
+                  Math.random() * 2 + 1,
+                  Math.random() * 2 + 1
+                );
+              }
+            }
+          }
+        }
+        dctx.clearRect(0, 0, display.width, display.height);
+        dctx.imageSmoothingEnabled = true;
+        dctx.imageSmoothingQuality = "high";
+        dctx.drawImage(tmp, 0, 0, display.width, display.height);
+      }
+
+      function updateStats() {
+        const total = moduleCount * moduleCount;
+        let erased = 0;
+        for (let r = 0; r < moduleCount; r++)
+          for (let c = 0; c < moduleCount; c++) if (eraseMask[r][c]) erased++;
+        totalModulesEl.textContent = total;
+        erasedModulesEl.textContent = erased;
+        erasedPctEl.textContent = total
+          ? ((erased / total) * 100).toFixed(2) + "%"
+          : "-";
+      }
+
+      function randomErase() {
+        if (!qrObj) return;
+        const pct = parseFloat(eraseRange.value || "10");
+        const total = moduleCount * moduleCount;
+        const toErase = Math.round((total * pct) / 100);
+        const coords = [];
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            if (protectFunction && isFunctionModule(r, c)) continue;
+            coords.push([r, c]);
+          }
+        }
+        for (let i = coords.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [coords[i], coords[j]] = [coords[j], coords[i]];
+        }
+        for (let i = 0; i < toErase && i < coords.length; i++) {
+          const [r, c] = coords[i];
+          eraseMask[r][c] = true;
+        }
+        renderToDisplay();
+        updateStats();
+        tryDecode();
+      }
+
+      function clearErase() {
+        if (!qrObj) return;
+        eraseMask = Array.from({ length: moduleCount }, () =>
+          Array(moduleCount).fill(false)
+        );
+        renderToDisplay();
+        updateStats();
+        tryDecode();
+      }
+      let drawing = false;
+      let drawErase = true;
+      display.addEventListener("mousedown", (e) => {
+        if (!qrObj) return;
+        drawing = true;
+        drawErase = !e.shiftKey;
+        handlePointer(e);
+      });
+      window.addEventListener("mouseup", () => (drawing = false));
+      display.addEventListener("mousemove", (e) => {
+        if (drawing) handlePointer(e);
+      });
+
+      function handlePointer(e) {
+        const rect = display.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (display.width / rect.width);
+        const y = (e.clientY - rect.top) * (display.height / rect.height);
+        const moduleScreenSize = display.width / moduleCount;
+        const c = Math.floor(x / moduleScreenSize);
+        const r = Math.floor(y / moduleScreenSize);
+        if (r >= 0 && r < moduleCount && c >= 0 && c < moduleCount) {
+          if (protectFunction && isFunctionModule(r, c)) return;
+          eraseMask[r][c] = drawErase;
+          renderToDisplay();
+          updateStats();
+          tryDecode();
+        }
+      }
+      function tryDecode() {
+        setTimeout(() => {
+          try {
+            const imageData = dctx.getImageData(
+              0,
+              0,
+              display.width,
+              display.height
+            );
+            const code = jsQR(
+              imageData.data,
+              imageData.width,
+              imageData.height,
+              { inversionAttempts: "attemptBoth" }
+            );
+            if (code && code.data) {
+              statusEl.className = "status ok";
+              statusEl.textContent = "Decoded successfully";
+              decodeResult.textContent = code.data;
+            } else {
+              statusEl.className = "status fail";
+              statusEl.textContent = "Decoding failed";
+              decodeResult.textContent = "—";
+            }
+          } catch (err) {
+            statusEl.className = "status fail";
+            statusEl.textContent = "Decoding error";
+            decodeResult.textContent = "—";
+            console.warn("decode error", err);
+          }
+        }, 10);
+      }
+      renderBtn.addEventListener("click", () => {
+        makeQR();
+      });
+      eraseRange.addEventListener("input", () => {
+        erasePctLabel.textContent = eraseRange.value;
+      });
+      randomEraseBtn.addEventListener("click", () => {
+        randomErase();
+      });
+      clearEraseBtn.addEventListener("click", () => {
+        clearErase();
+      });
+      makeQR();
+    </script>
+    <footer>
+      Built with <span style="color: #9aa7ff">qrcode-generator</span> +
+      <span style="color: #9aa7ff">jsQR</span>. Hold <strong>Shift</strong> +
+      drag to restore modules.
+    </footer>
+  </body>
+</html>

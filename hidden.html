@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>QR Error‑Correction Visualizer + Hidden Channel</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial;
+        background: #111;
+        color: #eee;
+        display: flex;
+        height: 100vh;
+      }
+      #left {
+        width: 330px;
+        background: #1a1a1a;
+        padding: 20px;
+        overflow-y: auto;
+        border-right: 2px solid #333;
+      }
+      h2 {
+        margin-top: 0;
+      }
+      label {
+        display: block;
+        margin-top: 15px;
+        font-size: 14px;
+        opacity: 0.8;
+      }
+      input,
+      select {
+        width: 100%;
+        padding: 8px;
+        margin-top: 4px;
+        border-radius: 6px;
+        background: #222;
+        color: #ddd;
+        border: 1px solid #444;
+      }
+      button {
+        margin-top: 12px;
+        width: 100%;
+        padding: 10px;
+        border: none;
+        border-radius: 8px;
+        background: #4c8bf5;
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      button.ghost {
+        background: #333;
+      }
+      #canvasBox {
+        flex-grow: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      canvas {
+        background: white;
+        image-rendering: pixelated;
+      }
+      #status {
+        margin-top: 10px;
+        padding: 8px;
+        border-radius: 6px;
+        text-align: center;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="left">
+      <h2>QR Error‑Correction Visualizer</h2>
+
+      <label>Text to encode</label>
+      <input id="mainTxt" value="Hello QR" />
+
+      <label>Error Correction Level</label>
+      <select id="ecc">
+        <option value="L">L (low)</option>
+        <option value="M" selected>M (medium)</option>
+        <option value="Q">Q (quartile)</option>
+        <option value="H">H (high)</option>
+      </select>
+
+      <button id="renderBtn">Render QR</button>
+
+      <hr style="margin: 20px 0; border-color: #333" />
+
+      <h3>ERASE / DAMAGE</h3>
+      <label>Erase percent</label>
+      <input id="erasePercent" type="number" value="20" />
+      <button id="randErase">Random Erase</button>
+
+      <div id="status" style="background: #333">Not decoded yet</div>
+
+      <hr style="margin: 20px 0; border-color: #333" />
+
+      <h3>HIDDEN CHANNEL</h3>
+      <label>Secret hidden text</label>
+      <input id="secretTxt" value="Hidden message" />
+      <button id="embedSecret" class="ghost">Embed Secret</button>
+      <button id="readSecret" class="ghost">Read Secret</button>
+    </div>
+
+    <div id="canvasBox">
+      <canvas id="qrCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <script type="module">
+      import { BrowserQRCodeReader } from "https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/esm5/index.js";
+      window.zxing = new BrowserQRCodeReader();
+    </script>
+
+    <script>
+      let qrObj = null;
+      let moduleCount = 0;
+      let eraseMask = [];
+      const canvas = document.getElementById("qrCanvas");
+      const ctx = canvas.getContext("2d");
+      const statusEl = document.getElementById("status");
+      (function () {
+        const script = document.createElement("script");
+        script.src =
+          "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js";
+        script.onload = () => {};
+        document.head.appendChild(script);
+      })();
+
+      function makeQR(text, ecc) {
+        qrObj = qrcode(0, ecc);
+        qrObj.addData(text);
+        qrObj.make();
+        moduleCount = qrObj.getModuleCount();
+        eraseMask = Array.from({ length: moduleCount }, () =>
+          Array(moduleCount).fill(false)
+        );
+      }
+
+      function isFunctionModule(r, c) {
+        const inTL = r < 9 && c < 9;
+        const inTR = r < 9 && c > moduleCount - 10;
+        const inBL = r > moduleCount - 10 && c < 9;
+        return inTL || inTR || inBL;
+      }
+
+      function renderToCanvas() {
+        const size = canvas.width;
+        const cell = size / moduleCount;
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, size, size);
+
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            let v = qrObj.isDark(r, c);
+            if (eraseMask[r][c]) v = false;
+            ctx.fillStyle = v ? "black" : "white";
+            ctx.fillRect(c * cell, r * cell, cell, cell);
+          }
+        }
+      }
+
+      async function decodeQR() {
+        try {
+          const dataUrl = canvas.toDataURL();
+          const res = await zxing.decodeFromImageUrl(dataUrl);
+          statusEl.style.background = "#0a510a";
+          statusEl.textContent = "Decoded: " + res.text;
+        } catch (e) {
+          statusEl.style.background = "#5a0000";
+          statusEl.textContent = "Failed to decode";
+        }
+      }
+
+      function randomErase() {
+        const pct =
+          parseInt(document.getElementById("erasePercent").value) || 0;
+        const total = moduleCount * moduleCount;
+        const shouldErase = Math.floor((total * pct) / 100);
+        let indices = [];
+        for (let i = 0; i < total; i++) indices.push(i);
+        indices.sort(() => Math.random() - 0.5);
+        const pick = indices.slice(0, shouldErase);
+        eraseMask = Array.from({ length: moduleCount }, () =>
+          Array(moduleCount).fill(false)
+        );
+        for (let id of pick) {
+          const r = Math.floor(id / moduleCount);
+          const c = id % moduleCount;
+          if (!isFunctionModule(r, c)) eraseMask[r][c] = true;
+        }
+        renderToCanvas();
+        decodeQR();
+      }
+
+      function textToBits(s) {
+        return s
+          .split("")
+          .map((ch) => ch.charCodeAt(0).toString(2).padStart(8, "0"))
+          .join("");
+      }
+      function bitsToText(b) {
+        let out = "";
+        for (let i = 0; i < b.length; i += 8) {
+          out += String.fromCharCode(parseInt(b.slice(i, i + 8), 2) || 0);
+        }
+        return out;
+      }
+
+      function embedSecret() {
+        const msg = document.getElementById("secretTxt").value.trim();
+        if (!qrObj || !msg) return;
+        const bits = textToBits(msg);
+        let i = 0;
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            if (isFunctionModule(r, c)) continue;
+            if (i >= bits.length) break;
+            eraseMask[r][c] = bits[i] === "1";
+            i++;
+          }
+        }
+        renderToCanvas();
+        decodeQR();
+      }
+
+      function readSecret() {
+        if (!qrObj) return;
+        let bits = "";
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            if (isFunctionModule(r, c)) continue;
+            bits += eraseMask[r][c] ? "1" : "0";
+          }
+        }
+        alert("Secret message:" + bitsToText(bits));
+      }
+
+      document.getElementById("renderBtn").onclick = () => {
+        const t = document.getElementById("mainTxt").value;
+        const e = document.getElementById("ecc").value;
+        makeQR(t, e);
+        renderToCanvas();
+        decodeQR();
+      };
+
+      document.getElementById("randErase").onclick = randomErase;
+      document.getElementById("embedSecret").onclick = embedSecret;
+      document.getElementById("readSecret").onclick = readSecret;
+    </script>
+  </body>
+</html>
